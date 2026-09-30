@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — Kwerry</title>
+<meta name="description" content="Sign in to Kwerry to run live SERP keyword research.">
+<meta name="theme-color" content="#ffffff">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body class="auth-page">
+  <main class="auth-card">
+    <div class="auth-brand">
+      <span class="brand-mark" aria-hidden="true"><img src="/icon.svg" width="28" height="28" alt=""></span>
+      <div class="brand-text">
+        <strong>Kwerry</strong>
+        <span>Live SERP research</span>
+      </div>
+    </div>
+
+    <div class="auth-tabs" role="tablist">
+      <button class="tab active" data-auth="login" type="button">Sign in</button>
+      <button class="tab" data-auth="register" type="button">Create account</button>
+    </div>
+
+    <form id="loginForm" class="auth-form" autocomplete="on">
+      <h1>Sign in</h1>
+      <p class="auth-sub">Use your local Kwerry account.</p>
+      <label for="loginUser">Username</label>
+      <input id="loginUser" name="username" autocomplete="username" required>
+      <label for="loginPass">Password</label>
+      <input id="loginPass" name="password" type="password" autocomplete="current-password" required>
+      <button class="btn-run" type="submit">Sign in</button>
+    </form>
+
+    <form id="registerForm" class="auth-form hidden" autocomplete="on">
+      <h1>Create account</h1>
+      <p class="auth-sub">Local account on this machine.</p>
+      <label for="regUser">Username</label>
+      <input id="regUser" name="username" autocomplete="username" required>
+      <label for="regPass">Password</label>
+      <input id="regPass" name="password" type="password" autocomplete="new-password" required>
+      <label for="regPass2">Confirm password</label>
+      <input id="regPass2" name="password2" type="password" autocomplete="new-password" required>
+      <button class="btn-run" type="submit">Create account</button>
+    </form>
+
+    <div id="authError" class="hidden error" role="alert"></div>
+    <a class="auth-back" href="/">← Back to home</a>
+  </main>
+  <script src="/auth.js"></script>
+</body>
+</html>

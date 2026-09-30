@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analytics — Kwerry</title>
+<meta name="description" content="Kwerry analytics dashboard: search activity, score distribution, top keywords, and SERP domain insights for your keyword research.">
+<meta name="theme-color" content="#ffffff">
+<meta name="color-scheme" content="light">
+<link rel="canonical" href="/analytics.html">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Kwerry">
+<meta property="og:title" content="Analytics — Kwerry">
+<meta property="og:description" content="Search activity, score distribution, top keywords, and SERP domain insights for your keyword research.">
+<meta property="og:image" content="/icon-1024.png">
+<meta property="og:image:alt" content="Kwerry — detective magnifying glass app icon">
+<meta property="og:url" content="/analytics.html">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Analytics — Kwerry">
+<meta name="twitter:description" content="Search activity, score distribution, top keywords, and SERP domain insights.">
+<meta name="twitter:image" content="/icon-1024.png">
+<meta name="robots" content="index, follow">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body class="app-shell">
+<aside class="sidebar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <img src="/icon.svg" width="28" height="28" alt="">
+    </span>
+    <div class="brand-text">
+      <strong>Kwerry</strong>
+      <span>Live SERP research</span>
+    </div>
+  </div>
+  <nav class="side-nav" aria-label="Primary">
+    <a class="side-link" href="/research.html">
+      <svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+      Research
+    </a>
+    <a class="side-link active" href="/analytics.html">
+      <svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 13.5h11"/><path d="M4 11V7"/><path d="M7 11V4.5"/><path d="M10 11V6"/><path d="M13 11V3"/></svg>
+      Analytics
+    </a>
+    <a class="side-link" href="/history.html">
+      <svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/></svg>
+      History
+    </a>
+    <a class="side-link" href="/compare.html">
+      <svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="2.5" y="3" width="4.5" height="10" rx="1"/><rect x="9" y="3" width="4.5" height="10" rx="1"/></svg>
+      Compare
+    </a>
+    <a class="side-link" href="/settings.html">
+      <svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2"/><path d="M8 2.5v1.5M8 12v1.5M2.5 8H4M12 8h1.5M4.4 4.4l1.1 1.1M10.5 10.5l1.1 1.1M11.6 4.4l-1.1 1.1M5.5 10.5l-1.1 1.1"/></svg>
+      Settings
+    </a>
+  </nav>
+  <div class="side-foot">
+    <div class="side-user-menu">
+      <button class="side-link side-btn user-trigger" id="userMenuBtn" type="button" aria-haspopup="true">
+        <svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="5.5" r="2.5"/><path d="M3.5 13c0-2.2 2-4 4.5-4s4.5 1.8 4.5 4"/></svg>
+        <span class="user-label" id="sideUser">Profile</span>
+      </button>
+      <div class="user-popover hidden" id="userPopover">
+        <div class="user-popover-head">
+          Signed in as
+          <strong id="sideUserName">…</strong>
+        </div>
+        <button class="user-popover-item" id="openLogoutBtn" type="button">Sign out</button>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<main class="main">
+  <header>
+    <div>
+      <span class="eyebrow">KWERRY</span>
+      <h1>Analytics Dashboard</h1>
+      <p>Research summary: search activity, score distribution, and frequent SERP domains.</p>
+    </div>
+  </header>
+
+  <div id="loading" class="loading" aria-live="polite">Loading analytics…</div>
+  <div id="error" class="hidden error" role="alert"></div>
+
+  <section id="dash" class="hidden">
+    <div class="metrics" id="kpiRow">
+      <div class="metric"><span>Total searches</span><b id="kpiTotal">—</b></div>
+      <div class="metric"><span>Unique keywords</span><b id="kpiUnique">—</b></div>
+      <div class="metric"><span>Average score</span><b id="kpiAvg">—</b></div>
+      <div class="metric"><span>Last search</span><b id="kpiLast">—</b></div>
+    </div>
+
+    <div class="grid">
+      <article class="panel">
+        <h2>Verdict distribution</h2>
+        <div id="verdictChart" class="bar-chart"></div>
+      </article>
+      <article class="panel">
+        <h2>Search intent</h2>
+        <div id="intentChart" class="bar-chart"></div>
+      </article>
+    </div>
+
+    <div class="grid">
+      <article class="panel">
+        <h2>Opportunity score</h2>
+        <div id="scoreChart" class="bar-chart"></div>
+      </article>
+      <article class="panel">
+        <h2>Search activity / day</h2>
+        <div id="dayChart" class="day-chart"></div>
+      </article>
+    </div>
+
+    <div class="grid">
+      <article class="panel">
+        <h2>Top keywords</h2>
+        <div class="tableWrap">
+          <table>
+            <thead><tr><th>Keyword</th><th>Searches</th><th>Avg score</th><th>Last searched</th></tr></thead>
+            <tbody id="topKeywords"></tbody>
+          </table>
+        </div>
+      </article>
+      <article class="panel">
+        <h2>Top SERP domains</h2>
+        <div id="topDomains" class="bar-chart"></div>
+      </article>
+    </div>
+
+  </section>
+
+  <footer class="site-footer">
+    <span>(c) 2026 <a class="footer-link" href="https://scrambledhead.pxnjx.com/" target="_blank" rel="noopener"><strong>scrambled_head.studio</strong></a> · All scribbles reserved.</span>
+  </footer>
+</main>
+
+<div id="logoutModal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-card modal-sm">
+    <h2>Sign out?</h2>
+    <p class="muted" style="margin:0 0 var(--sp-2)">You will need to sign in again to access the dashboard.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn-ghost btn-sm" id="cancelLogout">Cancel</button>
+      <button type="button" class="btn-run btn-sm" id="confirmLogout">Sign out</button>
+    </div>
+  </div>
+</div>
+
+<script src="/analytics.js"></script>
+<script src="/shell.js"></script>
+</body>
+</html>

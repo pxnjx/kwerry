@@ -1,0 +1,16 @@
+{
+  "name": "kwerry",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kwerry — live SERP keyword research fullstack",
+  "license": "AGPL-3.0-only",
+  "author": "scrambled_head.studio",
+  "homepage": "https://scrambledhead.pxnjx.com/",
+  "scripts": {
+    "start": "node --env-file=.env server.js",
+    "dev": "node --env-file=.env server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
