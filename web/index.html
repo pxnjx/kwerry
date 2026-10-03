@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Kwerry runs on your own machine against your own SQLite file, so it must
+       stay out of search indexes. OG/Twitter tags below are unaffected by this:
+       they still drive link previews when a URL is pasted into Slack, Discord,
+       or a chat app. -->
+  <meta name="robots" content="noindex, nofollow">
+
+  <title>Kwerry — Live SERP keyword research</title>
+  <meta name="description" content="Local-first keyword research from live Google and Bing SERPs: AI Overview citations, Google Trends, autocomplete ideas, opportunity scoring, and Markdown export.">
+  <meta name="application-name" content="Kwerry">
+  <meta name="apple-mobile-web-app-title" content="Kwerry">
+  <meta name="mobile-web-app-capable" content="yes">
+  <!-- Stops iOS turning keyword strings into phone links. -->
+  <meta name="format-detection" content="telephone=no">
+  <!-- Match the browser chrome to the theme tokens: #fff paper, #161616 dark. -->
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#161616" media="(prefers-color-scheme: dark)">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Kwerry">
+  <meta property="og:title" content="Kwerry — Live SERP keyword research">
+  <meta property="og:description" content="Local-first keyword research from live Google and Bing SERPs: AI Overview citations, Google Trends, autocomplete ideas, opportunity scoring, and Markdown export.">
+  <meta property="og:locale" content="en_US">
+  <!-- Root-relative on purpose: there is no public host to hardcode. -->
+  <meta property="og:image" content="/icon-1024.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1024">
+  <meta property="og:image:height" content="1024">
+  <meta property="og:image:alt" content="Kwerry logo: a key whose bow is drawn as a magnifying glass">
+
+  <!-- Twitter / X card. summary, not summary_large_image: the only square asset
+       we ship is 1024x1024, which a 2:1 large-image card would crop badly. -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Kwerry — Live SERP keyword research">
+  <meta name="twitter:description" content="Local-first keyword research from live Google and Bing SERPs: AI Overview citations, Google Trends, autocomplete ideas, opportunity scoring, and Markdown export.">
+  <meta name="twitter:image" content="/icon-1024.png">
+  <meta name="twitter:image:alt" content="Kwerry logo: a key whose bow is drawn as a magnifying glass">
+
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="/icon-180.png">
+
+  <!-- Structured data. Kept truthful: no invented rating, review count, or
+       pricing. `url` is omitted because the app has no canonical public
+       address, and rich results are off anyway while robots is noindex. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Kwerry",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Windows, macOS, Linux",
+    "description": "Local-first keyword research from live Google and Bing SERPs, with AI Overview citations, Google Trends, autocomplete ideas, opportunity scoring, bulk runs, and Markdown or CSV export.",
+    "featureList": [
+      "Live Google and Bing SERP analysis",
+      "AI Overview outline with citations",
+      "Google Trends interest series",
+      "Autocomplete and related keyword ideas",
+      "Opportunity scoring with verdict and intent",
+      "Bulk research up to 25 keywords",
+      "Side-by-side comparison of saved searches",
+      "Analytics dashboard",
+      "Markdown report and CSV export",
+      "SerpAPI key pool with live quota and reset countdown",
+      "Local accounts and SQLite backup"
+    ],
+    "isAccessibleForFree": true
+  }
+  </script>
+  <script>
+    // Resolves the theme before first paint so a dark-mode reload never
+    // flashes white. Runs synchronously in <head>.
+    (function () {
+      try {
+        var stored = window.localStorage.getItem("kwerry.theme");
+        var theme =
+          stored === "light" || stored === "dark"
+            ? stored
+            : window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+        document.documentElement.dataset.theme = theme;
+      } catch (e) {
+        document.documentElement.dataset.theme = "light";
+      }
+    })();
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>

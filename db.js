@@ -5,7 +5,6 @@ const { DatabaseSync } = require("node:sqlite");
 
 const DATA_DIR = path.join(__dirname, "data");
 const DB_PATH = path.join(DATA_DIR, "keyword-research.db");
-const LEGACY_HISTORY = path.join(DATA_DIR, "history.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -36,12 +35,7 @@ db.exec(`
     created_at TEXT NOT NULL
   );
 
-  CREATE TABLE IF NOT EXISTS projects (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  );
+
 
   CREATE TABLE IF NOT EXISTS searches (
     id TEXT PRIMARY KEY,
@@ -83,7 +77,17 @@ function ensureColumn(table, column, ddl) {
 }
 ensureColumn("searches", "user_id", "user_id TEXT");
 ensureColumn("keywords", "user_id", "user_id TEXT");
-ensureColumn("searches", "project_id", "project_id TEXT");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS serp_cache (
+      cache_key TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+  `);
+
 ensureColumn("searches", "notes", "notes TEXT DEFAULT ''");
 ensureColumn("searches", "tags", "tags TEXT DEFAULT '[]'");
 
@@ -143,11 +147,10 @@ function seedDefaultUser() {
   console.log("────────────────────────────────────────");
   return id;
 }
-const DEFAULT_USER_ID = seedDefaultUser();
-
-// Bind any legacy / unowned rows to the default user so history stays visible.
-db.prepare(`UPDATE searches SET user_id = ? WHERE user_id IS NULL OR user_id = ''`).run(DEFAULT_USER_ID);
-db.prepare(`UPDATE keywords SET user_id = ? WHERE user_id IS NULL OR user_id = ''`).run(DEFAULT_USER_ID);
+seedDefaultUser();
+// ponytail: the legacy "bind unowned rows to default user" rebinds are gone — migration
+// already ran (0 unowned searches/keywords verified). If you restore a pre-2026 backup,
+// run one UPDATE … SET user_id = (SELECT id FROM users LIMIT 1) WHERE user_id IS NULL.
 
 function getUserByUsername(username) {
   return db.prepare("SELECT * FROM users WHERE username = ?").get(String(username || "").toLowerCase());
@@ -212,9 +215,19 @@ function destroySession(token) {
 }
 
 // --- SerpAPI keys (multi-account pool) ---
+const MIN_KEY_LEN = 16;
+
 function seedApiKeyFromEnv() {
-  const envKey = process.env.SERPAPI_API_KEY || "";
+  const envKey = (process.env.SERPAPI_API_KEY || "").trim();
   if (!envKey) return;
+  // Same floor addApiKey() enforces. Without this a server booted with a
+  // half-set or stray SERPAPI_API_KEY in the environment silently inserted a
+  // junk ACTIVE row -- Node's --env-file does not override a variable that is
+  // already exported, so a stray shell value wins over .env.
+  if (envKey.length < MIN_KEY_LEN) {
+    console.warn(`  WARNING: SERPAPI_API_KEY ignored -- only ${envKey.length} character(s), expected at least ${MIN_KEY_LEN}.`);
+    return;
+  }
   const existing = db.prepare("SELECT id FROM api_keys WHERE api_key = ?").get(envKey);
   if (existing) return;
   db.prepare(
@@ -231,7 +244,6 @@ function listApiKeys() {
     label: r.label,
     // mask key in UI lists
     apiKeyMasked: maskKey(r.api_key),
-    apiKeyFull: r.api_key,
     isActive: !!r.is_active,
     createdAt: r.created_at
   }));
@@ -244,7 +256,7 @@ function maskKey(key) {
 function addApiKey(label, apiKey) {
   const key = String(apiKey || "").trim();
   if (!key) throw new Error("API key is required.");
-  if (key.length < 16) throw new Error("API key looks too short.");
+  if (key.length < MIN_KEY_LEN) throw new Error("API key looks too short.");
   const existing = db.prepare("SELECT id FROM api_keys WHERE api_key = ?").get(key);
   if (existing) throw new Error("This API key is already saved.");
   const id = crypto.randomUUID();
@@ -266,75 +278,6 @@ function getActiveApiKeys() {
     "SELECT * FROM api_keys WHERE is_active = 1 ORDER BY created_at ASC"
   ).all();
 }
-
-// One-time migration from legacy history.json (if present and DB is empty).
-function migrateLegacyHistory() {
-  if (!fs.existsSync(LEGACY_HISTORY)) return;
-  const count = db.prepare("SELECT COUNT(*) AS c FROM searches").get().c;
-  if (count > 0) return;
-  let items = [];
-  try { items = JSON.parse(fs.readFileSync(LEGACY_HISTORY, "utf8")); } catch { return; }
-  if (!Array.isArray(items) || !items.length) return;
-
-  const insertSearch = db.prepare(`
-    INSERT OR IGNORE INTO searches
-      (id, user_id, keyword, keyword_lower, engine, location, goal, score, verdict, intent,
-       serp_json, suggestions_json, recommendations_json, reasons_json, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const upsertKeyword = db.prepare(`
-    INSERT INTO keywords (keyword_lower, user_id, keyword, first_searched_at, last_searched_at, search_count, best_score, last_verdict, last_intent)
-    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
-    ON CONFLICT(keyword_lower) DO UPDATE SET
-      last_searched_at = MAX(keywords.last_searched_at, excluded.last_searched_at),
-      first_searched_at = MIN(keywords.first_searched_at, excluded.first_searched_at),
-      search_count = keywords.search_count + 1,
-      best_score = MAX(COALESCE(keywords.best_score, -1), COALESCE(excluded.best_score, -1)),
-      last_verdict = excluded.last_verdict,
-      last_intent = excluded.last_intent
-  `);
-
-  db.exec("BEGIN");
-  try {
-    for (const item of items) {
-      if (!item?.keyword) continue;
-      const createdAt = item.createdAt || new Date().toISOString();
-      const keywordLower = String(item.keyword).toLowerCase();
-      insertSearch.run(
-        item.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-        DEFAULT_USER_ID,
-        String(item.keyword),
-        keywordLower,
-        item.engine || "google",
-        item.location || "Indonesia",
-        item.goal || "seo",
-        item.evaluation?.score ?? null,
-        item.evaluation?.verdict ?? null,
-        item.evaluation?.intent ?? null,
-        JSON.stringify(item.serp || {}),
-        JSON.stringify(item.suggestions || []),
-        JSON.stringify(item.recommendations || []),
-        JSON.stringify(item.evaluation?.reasons || []),
-        createdAt
-      );
-      upsertKeyword.run(
-        keywordLower,
-        DEFAULT_USER_ID,
-        String(item.keyword),
-        createdAt,
-        createdAt,
-        item.evaluation?.score ?? null,
-        item.evaluation?.verdict ?? null,
-        item.evaluation?.intent ?? null
-      );
-    }
-    db.exec("COMMIT");
-  } catch (e) {
-    db.exec("ROLLBACK");
-    console.error("Legacy history migration failed:", e.message);
-  }
-}
-migrateLegacyHistory();
 
 const insertSearchStmt = db.prepare(`
   INSERT INTO searches
@@ -359,7 +302,10 @@ function saveSearch(result, userId) {
   const createdAt = result.createdAt || new Date().toISOString();
   const keywordLower = String(result.keyword || "").toLowerCase();
   const score = result.evaluation?.score ?? null;
-  const uid = userId || DEFAULT_USER_ID;
+  // ponytail: no fallback user id — the column is nullable and every live
+  // caller passes user.id, so a falsy userId means the caller lost the session
+  // and the row is better left unowned (and nullable) than crashing the save.
+  const uid = userId || null;
   insertSearchStmt.run(
     result.id,
     uid,
@@ -387,9 +333,6 @@ function saveSearch(result, userId) {
     result.evaluation?.verdict ?? null,
     result.evaluation?.intent ?? null
   );
-  if (result.projectId) {
-    db.prepare("UPDATE searches SET project_id = ? WHERE id = ?").run(result.projectId, result.id);
-  }
 }
 
 function rowToSearch(row) {
@@ -403,7 +346,6 @@ function rowToSearch(row) {
     engine: row.engine,
     location: row.location,
     goal: row.goal,
-    projectId: row.project_id || null,
     notes: row.notes || "",
     tags,
     evaluation: {
@@ -418,11 +360,10 @@ function rowToSearch(row) {
   };
 }
 
-function listSearches(limit = 50, offset = 0, userId, projectId) {
+function listSearches(limit = 50, offset = 0, userId) {
   const filters = [];
   const params = [];
   if (userId) { filters.push("user_id = ?"); params.push(userId); }
-  if (projectId) { filters.push("project_id = ?"); params.push(projectId); }
   params.push(Math.min(Number(limit) || 50, 500));
   params.push(Math.max(Number(offset) || 0, 0));
   const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
@@ -444,41 +385,6 @@ function deleteSearch(id, userId) {
     ? db.prepare("DELETE FROM searches WHERE id = ? AND user_id = ?").run(String(id), userId)
     : db.prepare("DELETE FROM searches WHERE id = ?").run(String(id));
   return info.changes > 0;
-}
-
-function listKeywords(limit = 100, userId) {
-  const rows = userId
-    ? db.prepare(
-        "SELECT * FROM keywords WHERE user_id = ? ORDER BY search_count DESC, last_searched_at DESC LIMIT ?"
-      ).all(userId, Math.min(Number(limit) || 100, 1000))
-    : db.prepare(
-        "SELECT * FROM keywords ORDER BY search_count DESC, last_searched_at DESC LIMIT ?"
-      ).all(Math.min(Number(limit) || 100, 1000));
-  return rows.map(r => ({
-    keyword: r.keyword,
-    firstSearchedAt: r.first_searched_at,
-    lastSearchedAt: r.last_searched_at,
-    searchCount: r.search_count,
-    bestScore: r.best_score,
-    lastVerdict: r.last_verdict,
-    lastIntent: r.last_intent
-  }));
-}
-
-function getKeyword(keyword, userId) {
-  const r = userId
-    ? db.prepare("SELECT * FROM keywords WHERE keyword_lower = ? AND user_id = ?").get(String(keyword).toLowerCase(), userId)
-    : db.prepare("SELECT * FROM keywords WHERE keyword_lower = ?").get(String(keyword).toLowerCase());
-  if (!r) return null;
-  return {
-    keyword: r.keyword,
-    firstSearchedAt: r.first_searched_at,
-    lastSearchedAt: r.last_searched_at,
-    searchCount: r.search_count,
-    bestScore: r.best_score,
-    lastVerdict: r.last_verdict,
-    lastIntent: r.last_intent
-  };
 }
 
 function analytics(userId) {
@@ -541,17 +447,21 @@ function analytics(userId) {
     ORDER BY bucket
   `).all(...params);
 
-  const allSerps = db.prepare(`SELECT serp_json FROM searches ${where}`).all(...params);
+  // ponytail: full-corpus JSON.parse per row was unbounded — pull only the
+  // searches that can rank, via the same ORDER BY topKeywords already uses.
+  // O(topN) parses instead of O(all rows); ties broken on recency.
+  const domainRows = db.prepare(`
+    SELECT serp_json FROM searches ${where}
+    ORDER BY created_at DESC
+    LIMIT 300
+  `).all(...params);
   const domainCounts = {};
-  for (const row of allSerps) {
+  for (const row of domainRows) {
     let serp;
     try { serp = JSON.parse(row.serp_json || "{}"); } catch { continue; }
     for (const item of (serp.organic || [])) {
-      if (!item?.link) continue;
-      try {
-        const host = new URL(item.link).hostname.replace(/^www\./, "");
-        if (host) domainCounts[host] = (domainCounts[host] || 0) + 1;
-      } catch { /* ignore */ }
+      const host = domainOf(item.link);
+      if (host) domainCounts[host] = (domainCounts[host] || 0) + 1;
     }
   }
   const topDomains = Object.entries(domainCounts)
@@ -578,12 +488,11 @@ function analytics(userId) {
   };
 }
 
-function searchHistory(query, limit = 50, userId, projectId, offset = 0) {
+function searchHistory(query, limit = 50, userId, offset = 0) {
   const q = `%${String(query || "").toLowerCase()}%`;
   const filters = [];
   const params = [];
   if (userId) { filters.push("user_id = ?"); params.push(userId); }
-  if (projectId) { filters.push("project_id = ?"); params.push(projectId); }
   filters.push("keyword_lower LIKE ?");
   params.push(q);
   params.push(Math.min(Number(limit) || 50, 200));
@@ -595,11 +504,10 @@ function searchHistory(query, limit = 50, userId, projectId, offset = 0) {
   return rows.map(rowToSearch);
 }
 
-function countSearches(userId, projectId, query) {
+function countSearches(userId, query) {
   const filters = [];
   const params = [];
   if (userId) { filters.push("user_id = ?"); params.push(userId); }
-  if (projectId) { filters.push("project_id = ?"); params.push(projectId); }
   if (query) {
     filters.push("keyword_lower LIKE ?");
     params.push(`%${String(query).toLowerCase()}%`);
@@ -608,7 +516,7 @@ function countSearches(userId, projectId, query) {
   return db.prepare(`SELECT COUNT(*) AS c FROM searches ${where}`).get(...params).c;
 }
 
-function updateSearchMeta(id, { notes, tags, projectId }, userId) {
+function updateSearchMeta(id, { notes, tags }, userId) {
   const row = userId
     ? db.prepare("SELECT id FROM searches WHERE id = ? AND user_id = ?").get(String(id), userId)
     : db.prepare("SELECT id FROM searches WHERE id = ?").get(String(id));
@@ -620,50 +528,32 @@ function updateSearchMeta(id, { notes, tags, projectId }, userId) {
     const arr = Array.isArray(tags) ? tags.map(String) : [];
     db.prepare("UPDATE searches SET tags = ? WHERE id = ?").run(JSON.stringify(arr.slice(0, 20)), String(id));
   }
-  if (projectId !== undefined) {
-    db.prepare("UPDATE searches SET project_id = ? WHERE id = ?").run(projectId || null, String(id));
-  }
   return true;
 }
 
-// --- projects ---
-function listProjects(userId) {
-  const rows = userId
-    ? db.prepare("SELECT * FROM projects WHERE user_id = ? ORDER BY created_at DESC").all(userId)
-    : db.prepare("SELECT * FROM projects ORDER BY created_at DESC").all();
-  return rows.map(r => ({
-    id: r.id,
-    name: r.name,
-    createdAt: r.created_at,
-    searchCount: db.prepare("SELECT COUNT(*) AS c FROM searches WHERE project_id = ?").get(r.id).c
-  }));
+// --- serp cache (24h TTL) ---
+function cacheGet(key, kind) {
+  const row = db.prepare("SELECT payload, expires_at FROM serp_cache WHERE cache_key = ? AND kind = ?").get(String(key), String(kind));
+  if (!row) return null;
+  if (String(row.expires_at) < new Date().toISOString()) {
+    db.prepare("DELETE FROM serp_cache WHERE cache_key = ?").run(String(key));
+    return null;
+  }
+  try { return JSON.parse(row.payload); } catch { return null; }
 }
-function createProject(name, userId) {
-  const n = String(name || "").trim();
-  if (!n) throw new Error("Project name is required.");
-  const id = crypto.randomUUID();
+function cacheSet(key, kind, payload, ttlMs = 24 * 60 * 60 * 1000) {
+  const now = new Date();
+  const exp = new Date(now.getTime() + ttlMs);
   db.prepare(
-    "INSERT INTO projects (id, user_id, name, created_at) VALUES (?, ?, ?, ?)"
-  ).run(id, userId || DEFAULT_USER_ID, n, new Date().toISOString());
-  return { id, name: n };
+    "INSERT INTO serp_cache (cache_key, kind, payload, created_at, expires_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, created_at = excluded.created_at, expires_at = excluded.expires_at"
+  ).run(String(key), String(kind), JSON.stringify(payload ?? null), now.toISOString(), exp.toISOString());
+  return true;
 }
-function renameProject(id, name, userId) {
-  const n = String(name || "").trim();
-  if (!n) throw new Error("Project name is required.");
-  const info = userId
-    ? db.prepare("UPDATE projects SET name = ? WHERE id = ? AND user_id = ?").run(n, String(id), userId)
-    : db.prepare("UPDATE projects SET name = ? WHERE id = ?").run(n, String(id));
-  return info.changes > 0;
-}
-function deleteProject(id, userId) {
-  db.prepare("UPDATE searches SET project_id = NULL WHERE project_id = ?").run(String(id));
-  const info = userId
-    ? db.prepare("DELETE FROM projects WHERE id = ? AND user_id = ?").run(String(id), userId)
-    : db.prepare("DELETE FROM projects WHERE id = ?").run(String(id));
-  return info.changes > 0;
+function cacheClear() {
+  const info = db.prepare("DELETE FROM serp_cache").run();
+  return { cleared: info.changes };
 }
 
-// --- backup ---
 function backupDatabase(destPath) {
   // checkpoint WAL so the main .db file is complete, then copy
   try { db.exec("PRAGMA wal_checkpoint(TRUNCATE);"); } catch { /* ok */ }
@@ -688,12 +578,18 @@ function restoreDatabase(srcPath) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const safety = DB_PATH + `.before-restore-${stamp}`;
   fs.copyFileSync(DB_PATH, safety);
-  // close is not available on DatabaseSync cleanly mid-request; copy over after flush
-  fs.copyFileSync(srcPath, DB_PATH);
-  // remove stale wal/shm so next open is clean
-  try { fs.rmSync(DB_PATH + "-wal", { force: true }); } catch {}
-  try { fs.rmSync(DB_PATH + "-shm", { force: true }); } catch {}
-  return { safetyPath: safety };
+  // ponytail: restoreDatabase only stages the swap — it writes the uploaded DB
+  // to data/restored.db and returns it. server.js performs the swap at shutdown
+  // so the live connection is never overwritten mid-request, which would leave
+  // open prepared statements reading a file that changed under them.
+  const staged = path.join(DATA_DIR, "restored.db");
+  fs.copyFileSync(srcPath, staged);
+  return { safetyPath: safety, stagedPath: staged };
+}
+
+// --- domain helper ---
+function domainOf(link) {
+  try { return new URL(link).hostname.replace(/^www\./, ""); } catch { return ""; }
 }
 
 module.exports = {
@@ -701,17 +597,12 @@ module.exports = {
   listSearches,
   getSearch,
   deleteSearch,
-  listKeywords,
-  getKeyword,
   analytics,
   searchHistory,
   countSearches,
   DB_PATH,
-  DEFAULT_USER_ID,
-  hashPassword,
   verifyPassword,
   getUserByUsername,
-  getUserById,
   createUser,
   changePassword,
   createSession,
@@ -722,12 +613,12 @@ module.exports = {
   removeApiKey,
   setApiKeyActive,
   getActiveApiKeys,
-  seedApiKeyFromEnv,
+  maskKey,
+  domainOf,
   updateSearchMeta,
-  listProjects,
-  createProject,
-  renameProject,
-  deleteProject,
   backupDatabase,
+  cacheGet,
+  cacheSet,
+  cacheClear,
   restoreDatabase
 };

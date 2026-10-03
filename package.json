@@ -8,9 +8,20 @@
   "homepage": "https://scrambledhead.pxnjx.com/",
   "scripts": {
     "start": "node --env-file=.env server.js",
-    "dev": "node --env-file=.env server.js"
+    "dev": "vite",
+    "dev:api": "node --env-file=.env -e \"process.env.PORT=8766; require('./server.js')\"",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "vite": "^8.3.1"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   }
 }
